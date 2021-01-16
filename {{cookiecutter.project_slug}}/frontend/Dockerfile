@@ -5,7 +5,8 @@ WORKDIR /app
 
 COPY package*.json /app/
 
-RUN npm install
+RUN npm --registry https://registry.npm.taobao.org info underscore && \
+    npm install --registry=https://registry.npm.taobao.org
 
 COPY ./ /app/
 

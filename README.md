@@ -1,3 +1,197 @@
+# Full Stack FastAPI and PostgreSQL - 从安装docker开始
+
+## 先说简单的（不想自己修改）
+
+不想自己修改的，可以把之后的cookiecutter部分改成
+`cookiecutter https://github.com/coolbreeze2/full-stack-fastapi-postgresql.git`
+
+------以下是我修改的部分------
+
+## 主机环境
+
+centos7
+
+## 快速安装docker
+
+```
+curl -sSL https://get.daocloud.io/docker | sh
+systemctl start docker
+systemctl enable docker
+```
+
+## 快速安装docker-compose
+
+直接去`https://github.com/docker/compose/releases/tag/1.24.1`网页端下载，上传到主机。
+
+这里我下载的是https://github.com/docker/compose/releases/download/1.24.1/docker-compose-Linux-x86_64。
+
+````
+mv 下载的文件路径 /usr/local/bin/docker-compose
+chmod +x /usr/local/bin/docker-compose
+ln -s /usr/local/bin/docker-compose /usr/bin/docker-compose
+docker-compose --version
+````
+
+## cookiecutter生成项目目录
+
+cookiecutter会生成对应的目录结构，过程中输入的一些参考参数如下：
+
+```sh
+(base) [root@localhost home]# cookiecutter https://github.com/tiangolo/full-stack-fastapi-postgresql
+project_name [Base Project]: devops
+project_slug [devops]:
+domain_main [devops.com]:
+domain_staging [stag.devops.com]:
+docker_swarm_stack_name_main [devops-com]:
+docker_swarm_stack_name_staging [stag-devops-com]:
+secret_key [changethis]: 123456
+first_superuser [admin@devops.com]:
+first_superuser_password [changethis]: 123456
+backend_cors_origins '["http://localhost", "http://localhost:4200", "http://localhost:3000", "http://localhost:8080", "https://localhost", "https://localhost:4200", "https://localhost:3000", "https://localhost:8080", "http://dev.devops.com", "https://stag.devops.com", "https://devops.com", "http://local.dockertoolbox.tiangolo.com", "http://localhost.tiangolo.com"]':
+smtp_port [587]:
+smtp_host []:
+smtp_user []:
+smtp_password []:
+smtp_emails_from_email [info@devops.com]:
+postgres_password [changethis]: 123456
+pgadmin_default_user [admin@devops.com]:
+pgadmin_default_user_password [123456]:
+traefik_constraint_tag [devops.com]:
+traefik_constraint_tag_staging [stag.devops.com]:
+traefik_public_constraint_tag [traefik-public]:
+flower_auth [admin:123456]:
+sentry_dsn []:
+docker_image_prefix []:
+docker_image_backend [backend]:
+docker_image_celeryworker [celeryworker]:
+docker_image_frontend [frontend]:
+(base) [root@localhost home]#
+```
+
+## 修改config.py
+
+`backend\app\app\core\config.py`修改行：
+
+`BACKEND_CORS_ORIGINS: List = ["*"]`
+
+ps: 不需要跨域的话可以不改。
+
+## 修改.env
+
+修改`frontend\.env`
+
+```
+# VUE_APP_DOMAIN_DEV=localhost
+VUE_APP_DOMAIN_DEV=你的主机ip或域名
+```
+
+ps:本机访问不需要修改。
+
+## docker换源
+
+```sh
+sudo mkdir -p /etc/docker
+sudo tee /etc/docker/daemon.json <<-'EOF'
+{
+    "registry-mirrors": [
+        "https://1nj0zren.mirror.aliyuncs.com",
+        "https://docker.mirrors.ustc.edu.cn",
+        "http://f1361db2.m.daocloud.io",
+        "https://dockerhub.azk8s.cn"
+    ]
+}
+EOF
+sudo systemctl daemon-reload
+sudo systemctl restart docker
+```
+
+## npm换源
+
+将`frontend/Dockerfile`中的`RUN npm install`替换
+
+```
+RUN npm --registry https://registry.npm.taobao.org info underscore && \
+    npm install --registry=https://registry.npm.taobao.org
+```
+
+## poetry改为pip
+
+`poetry`国内镜像用不了，这里换成`pip`。
+
+`backend/app`新建`requirments.txt`文件，内容如下:
+
+```
+uvicorn==0.11.3
+fastapi==0.54.1
+python-multipart==0.0.5
+email-validator==1.0.5
+requests==2.23.0
+celery==4.4.2
+passlib==1.7.2
+tenacity==6.1.0
+pydantic==1.4
+emails==0.5.15
+raven==6.10.0
+gunicorn==20.0.4
+jinja2==2.11.2
+psycopg2-binary==2.8.5
+alembic==1.4.2
+sqlalchemy==1.3.16
+pytest==5.4.1
+python-jose==3.1.0
+mypy==0.770
+black==19.10b0
+isort==4.3.21
+autoflake==1.3.1
+flake8==3.7.9
+pytest==5.4.1
+sqlalchemy-stubs==0.3
+pytest-cov==2.8.1
+bcrypt==3.2.0
+```
+
+
+
+`backend/celeryworker.dockerfile`和`backend/backend.dockerfile`更改行如下:
+
+```
+# pip install
+COPY ./app/requirments.txt /app/
+RUN pip config set global.index-url http://mirrors.aliyun.com/pypi/simple && \
+    pip config set install.trusted-host mirrors.aliyun.com && \
+    pip install -U pip && \
+    pip install -r requirments.txt
+
+# Install Poetry
+#RUN curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | POETRY_HOME=/opt/poetry python && \
+#    cd /usr/local/bin && \
+#    ln -s /opt/poetry/bin/poetry && \
+#    poetry config virtualenvs.create false
+
+# Copy poetry.lock* in case it doesn't exist in the repo
+# COPY ./app/pyproject.toml ./app/poetry.lock* /app/
+
+# Allow installing dev dependencies to run tests
+#ARG INSTALL_DEV=false
+#RUN bash -c "if [ $INSTALL_DEV == 'true' ] ; then poetry install --no-root ; else poetry install --no-root --no-dev ; fi"
+```
+
+## docker-compose启动
+
+`docker-compose up -d`
+
+上述命令完成后，`docker ps`查看在运行的docker，正常数量应该是7个。
+
+## 服务没起来？
+
+前面的步骤有误，没关系，改完之后重来。
+
+```
+docker stop $(docker ps -aq);docker rm $(docker ps -aq);docker rmi $(docker images -aq); docker-compose up -d
+```
+
+
+------以下为原README------
 # Full Stack FastAPI and PostgreSQL - Base Project Generator
 
 [![Build Status](https://travis-ci.com/tiangolo/full-stack-fastapi-postgresql.svg?branch=master)](https://travis-ci.com/tiangolo/full-stack-fastapi-postgresql)
